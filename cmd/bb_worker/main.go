@@ -203,6 +203,20 @@ func main() {
 			}
 			runnerClient := runner_pb.NewRunnerClient(runnerConnection)
 
+			var resourceManager *builder.ResourceManager
+			if len(runnerConfiguration.ResourceLimits) > 0 {
+				resourceLimits := map[string]int64{}
+				for k, v := range runnerConfiguration.ResourceLimits {
+					resourceLimits[k] = v
+				}
+
+				resourceAcquisitionTimeout, err := ptypes.Duration(runnerConfiguration.ResourceAcquisitionTimeout)
+				if err != nil {
+					log.Fatal("Failed to parse resource acquisition timeout")
+				}
+				resourceManager = builder.NewResourceManager(resourceLimits, resourceAcquisitionTimeout)
+			}
+
 			for threadID := uint64(0); threadID < runnerConfiguration.Concurrency; threadID++ {
 				go func(runnerConfiguration *bb_worker.RunnerConfiguration, threadID uint64) {
 					// Per-worker separate writer of the Content
@@ -255,14 +269,16 @@ func main() {
 								builder.NewFilePoolStatsBuildExecutor(
 									builder.NewTimestampedBuildExecutor(
 										builder.NewStorageFlushingBuildExecutor(
-											builder.NewLocalBuildExecutor(
-												contentAddressableStorageWriter,
-												buildDirectoryCreator,
-												runner.NewRemoteRunner(runnerConnection),
-												clock.SystemClock,
-												defaultExecutionTimeout,
-												maximumExecutionTimeout,
-												inputRootCharacterDevices),
+											builder.NewResourceAwareBuildExecutor(
+												builder.NewLocalBuildExecutor(
+													contentAddressableStorageWriter,
+													buildDirectoryCreator,
+													runner.NewRemoteRunner(runnerConnection),
+													clock.SystemClock,
+													defaultExecutionTimeout,
+													maximumExecutionTimeout,
+													inputRootCharacterDevices),
+												resourceManager),
 											contentAddressableStorageFlusher),
 										clock.SystemClock,
 										string(workerName)))),

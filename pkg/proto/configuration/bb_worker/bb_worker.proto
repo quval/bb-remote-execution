@@ -127,4 +127,16 @@ message RunnerConfiguration {
   // Device nodes to install in input root.
   // e.g. ["null", "zero", "random"]
   repeated string input_root_character_device_nodes = 9;
+
+  // Limits on resources that would be shared by actions on this runner.
+  // Keys are the name of the resource, as would be passed as a platform
+  // property on an action, and values are the limits. For example, this
+  // could be {"cpu": 50, "gpu": 10}. Any action scheduled on the runner
+  // is assumed to consume at least one of each resource type. More (or
+  // less) may be reserved by passing a value through platform properties.
+  map<string, int64> resource_limits = 10;
+
+  // Maximal time to wait for resources to become available before giving
+  // up. Required if resource limits are set.
+  google.protobuf.Duration resource_acquisition_timeout = 11;
 }

@@ -59,6 +59,11 @@ func main() {
 	}
 	contentAddressableStorage := re_blobstore.NewExistencePreconditionBlobAccess(info.BlobAccess)
 
+	resources := map[string]bool{}
+	for k, v := range configuration.Resources {
+		resources[k] = v
+	}
+
 	// TODO: Make timeouts configurable.
 	buildQueue := builder.NewInMemoryBuildQueue(
 		contentAddressableStorage,
@@ -78,7 +83,8 @@ func main() {
 			WorkerTaskRetryCount:                9,
 			WorkerWithNoSynchronizationsTimeout: time.Minute,
 		},
-		int(configuration.MaximumMessageSizeBytes))
+		int(configuration.MaximumMessageSizeBytes),
+		resources)
 
 	// Spawn gRPC servers for client and worker traffic.
 	go func() {

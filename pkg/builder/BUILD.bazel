@@ -17,6 +17,7 @@ go_library(
         "metrics_build_executor.go",
         "naive_build_directory.go",
         "output_hierarchy.go",
+        "resource_aware_build_executor.go",
         "root_build_directory_creator.go",
         "shared_build_directory_creator.go",
         "storage_flushing_build_executor.go",

@@ -160,6 +160,7 @@ type InMemoryBuildQueue struct {
 
 	lock           sync.Mutex
 	platformQueues map[platformKey]*platformQueue
+	resources map[string]bool
 
 	// Bookkeeping for WaitExecution(). This call permits us to
 	// re-attach to operations by name. It also allows us to obtain
@@ -179,7 +180,7 @@ type InMemoryBuildQueue struct {
 // NewInMemoryBuildQueue creates a new InMemoryBuildQueue that is in the
 // initial state. It does not have any queues, workers or queued
 // execution requests. All of these are created by sending it RPCs.
-func NewInMemoryBuildQueue(contentAddressableStorage blobstore.BlobAccess, clock clock.Clock, uuidGenerator util.UUIDGenerator, configuration *InMemoryBuildQueueConfiguration, maximumMessageSizeBytes int) *InMemoryBuildQueue {
+func NewInMemoryBuildQueue(contentAddressableStorage blobstore.BlobAccess, clock clock.Clock, uuidGenerator util.UUIDGenerator, configuration *InMemoryBuildQueueConfiguration, maximumMessageSizeBytes int, resources map[string]bool) *InMemoryBuildQueue {
 	inMemoryBuildQueuePrometheusMetrics.Do(func() {
 		prometheus.MustRegister(inMemoryBuildQueueTasksQueuedTotal)
 		prometheus.MustRegister(inMemoryBuildQueueTasksQueuedDurationSeconds)
@@ -200,6 +201,7 @@ func NewInMemoryBuildQueue(contentAddressableStorage blobstore.BlobAccess, clock
 		maximumMessageSizeBytes:             maximumMessageSizeBytes,
 		platformQueues:                      map[platformKey]*platformQueue{},
 		operationsNameMap:                   map[string]*operation{},
+		resources:                           resources,
 	}
 }
 
@@ -287,7 +289,7 @@ func (bq *InMemoryBuildQueue) Execute(in *remoteexecution.ExecuteRequest, out re
 		return util.StatusWrap(err, "Failed to obtain command")
 	}
 	command := commandMessage.(*remoteexecution.Command)
-	platformKey, err := newPlatformKey(instanceName, command.Platform)
+	platformKey, err := bq.newPlatformKey(instanceName, command.Platform)
 	if err != nil {
 		return err
 	}
@@ -989,6 +991,25 @@ func newPlatformKey(instanceName digest.InstanceName, platform *remoteexecution.
 		instanceName: instanceName,
 		platform:     platformString,
 	}, nil
+}
+
+func (bq *InMemoryBuildQueue) newPlatformKey(instanceName digest.InstanceName, platform *remoteexecution.Platform) (platformKey, error) {
+	if len(bq.resources) > 0 && platform != nil {
+		sanitisedPlatform := &remoteexecution.Platform{}
+		for _, property := range platform.Properties {
+			if keepInPlatform, ok := bq.resources[property.Name]; !ok {
+				sanitisedPlatform.Properties = append(sanitisedPlatform.Properties, property)
+			} else if keepInPlatform {
+				sanitisedPlatform.Properties = append(
+					sanitisedPlatform.Properties, &remoteexecution.Platform_Property{
+						Name:  property.Name,
+						Value: "true",
+					})
+			}
+		}
+		return newPlatformKey(instanceName, sanitisedPlatform)
+	}
+	return newPlatformKey(instanceName, platform)
 }
 
 // inFlightDeduplicationKey can be used as a key for maps to uniquely

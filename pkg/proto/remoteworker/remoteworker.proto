@@ -71,6 +71,9 @@ message CurrentState {
       // The worker is initializing its build environment.
       google.protobuf.Empty started = 2;
 
+      // The worker is waiting for shared resources.
+      google.protobuf.Empty acquiring_resources = 8;
+
       // The worker is fetching inputs that are a prerequisite for
       // execution. Prerequisites include the initial file system
       // contents if instantiated explicitly.

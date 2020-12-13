@@ -46,6 +46,13 @@ message ApplicationConfiguration {
 
   // AWS access options and credentials.
   buildbarn.configuration.cloud.aws.SessionConfiguration aws_session = 10;
+
+  // Names of resources that may be shared by actions on a runner. Platform
+  // properties with these names participate in platform resolution if the
+  // value is true (their value is normalised to 'true'); in either case,
+  // the actual value is passed on to the worker service, which may then
+  // manage resources.
+  map<string, bool> resources = 11;
 }
 
 message AWSASGLifecycleHookConfiguration {
