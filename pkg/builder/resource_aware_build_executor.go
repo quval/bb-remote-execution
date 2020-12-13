@@ -11,9 +11,11 @@ import (
 	remoteexecution "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/buildbarn/bb-remote-execution/pkg/filesystem"
 	"github.com/buildbarn/bb-remote-execution/pkg/proto/remoteworker"
+	"github.com/buildbarn/bb-remote-execution/pkg/proto/resourceusage"
 	"github.com/buildbarn/bb-storage/pkg/clock"
 	"github.com/buildbarn/bb-storage/pkg/digest"
 	"github.com/buildbarn/bb-storage/pkg/util"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 )
 
@@ -133,6 +135,14 @@ func NewResourceAwareBuildExecutor(base BuildExecutor, resourceManager *Resource
 	}
 }
 
+func attachMetadata(response *remoteexecution.ExecuteResponse, stats *resourceusage.SharedResourceUsage) {
+	if sharedResources, err := ptypes.MarshalAny(stats); err == nil {
+		response.Result.ExecutionMetadata.AuxiliaryMetadata = append(response.Result.ExecutionMetadata.AuxiliaryMetadata, sharedResources)
+	} else {
+		attachErrorToExecuteResponse(response, util.StatusWrap(err, "Failed to marshal shared resource usage"))
+	}
+}
+
 func (be *resourceAwareBuildExecutor) Execute(ctx context.Context, filePool filesystem.FilePool, instanceName digest.InstanceName, request *remoteworker.DesiredState_Executing, executionStateUpdates chan<- *remoteworker.CurrentState_Executing) *remoteexecution.ExecuteResponse {
 	if be.resourceManager == nil {
 		return be.base.Execute(ctx, filePool, instanceName, request, executionStateUpdates)
@@ -144,21 +154,32 @@ func (be *resourceAwareBuildExecutor) Execute(ctx context.Context, filePool file
 		},
 	}
 
+	stats := resourceusage.SharedResourceUsage{}
+
+	stats.ResourceAcquisitionStartTimestamp, _ = ptypes.TimestampProto(time.Now())
 	requirements, err := be.resourceManager.getResourceRequirements(request)
-	if err == nil {
-		executionStateUpdates <- &remoteworker.CurrentState_Executing{
-			ActionDigest: request.ActionDigest,
-			ExecutionState: &remoteworker.CurrentState_Executing_AcquiringResources{
-				AcquiringResources: &empty.Empty{},
-			},
-		}
-		err = be.resourceManager.reserveBlocking(ctx, requirements)
-	}
 	if err != nil {
+		attachMetadata(response, &stats)
+		attachErrorToExecuteResponse(response, util.StatusWrap(err, "Failed to determine resources for action"))
+		return response
+	}
+	stats.Resources = requirements
+
+	executionStateUpdates <- &remoteworker.CurrentState_Executing{
+		ActionDigest: request.ActionDigest,
+		ExecutionState: &remoteworker.CurrentState_Executing_AcquiringResources{
+			AcquiringResources: &empty.Empty{},
+		},
+	}
+	if err := be.resourceManager.reserveBlocking(ctx, requirements); err != nil {
+		attachMetadata(response, &stats)
 		attachErrorToExecuteResponse(response, util.StatusWrap(err, "Failed to acquire resources for action"))
 		return response
 	}
 
+	stats.ResourcesAcquiredTimestamp, _ = ptypes.TimestampProto(time.Now())
 	defer be.resourceManager.free(requirements)
-	return be.base.Execute(ctx, filePool, instanceName, request, executionStateUpdates)
+	executeResponse := be.base.Execute(ctx, filePool, instanceName, request, executionStateUpdates)
+	attachMetadata(executeResponse, &stats)
+	return executeResponse
 }

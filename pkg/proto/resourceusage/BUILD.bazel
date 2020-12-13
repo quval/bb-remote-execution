@@ -6,7 +6,10 @@ proto_library(
     name = "resourceusage_proto",
     srcs = ["resourceusage.proto"],
     visibility = ["//visibility:public"],
-    deps = ["@com_google_protobuf//:duration_proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 go_proto_library(

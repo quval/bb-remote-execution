@@ -3,6 +3,7 @@ syntax = "proto3";
 package buildbarn.resourceusage;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/buildbarn/bb-remote-execution/pkg/proto/resourceusage";
 
@@ -80,4 +81,10 @@ message POSIXResourceUsage {
 
   // ru_nivcsw: Involuntary context switches.
   int64 involuntary_context_switches = 16;
+}
+
+message SharedResourceUsage {
+  map<string, int64> resources = 1;
+  google.protobuf.Timestamp resource_acquisition_start_timestamp = 2;
+  google.protobuf.Timestamp resources_acquired_timestamp = 3;
 }
