@@ -4,6 +4,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "bazel_gomock",
+    patches = ["//:patches/bazel_gomock/tags-manual.diff"],
     sha256 = "5c4e7cde43a80d7bdef8cd3ff0741e33b24f9e2897ae9759bfe0ff2ba80125db",
     strip_prefix = "bazel_gomock-1.1",
     urls = ["https://github.com/jmhodges/bazel_gomock/archive/v1.1.tar.gz"],
@@ -37,6 +38,7 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
+    patches = ["//:patches/bazel_gazelle/dont-flatten-srcs.diff"],
     sha256 = "d8c45ee70ec39a57e7a05e5027c32b1576cc7f16d9dd37135b0eddde45cf1b10",
     urls = [
         "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz",
