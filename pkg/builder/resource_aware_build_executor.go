@@ -59,19 +59,19 @@ func (rm *ResourceManager) getResourceRequirements(request *remoteworker.Desired
 	return requirements, nil
 }
 
-func (rm *ResourceManager) isCompatible(requirements map[string]int64) bool {
+func (rm *ResourceManager) checkCompatible(requirements map[string]int64) error {
 	for resource, requested := range requirements {
 		limit, ok := rm.resourceLimits[resource]
 		if !ok || limit < requested {
-			return false
+            return fmt.Errorf("Could not satisfy requirements on this runner: %d of %s requested, but only %d available", requested, resource, limit)
 		}
 	}
-	return true
+	return nil
 }
 
 func (rm *ResourceManager) reserveBlocking(ctx context.Context, requirements map[string]int64) error {
-	if !rm.isCompatible(requirements) {
-		return fmt.Errorf("Could not satisfy requirements on this runner: %s requested, but only %s available", requirements, rm.resourceLimits)
+	if err := rm.checkCompatible(requirements); err != nil {
+		return err
 	}
 
 	timer, timerChannel := rm.clock.NewTimer(rm.resourceAcquisitionTimeout)
