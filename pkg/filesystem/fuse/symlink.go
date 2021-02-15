@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 
+	"github.com/buildbarn/bb-remote-execution/pkg/proto/remoteoutputservice"
 	"github.com/buildbarn/bb-storage/pkg/blobstore"
 	"github.com/buildbarn/bb-storage/pkg/digest"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
@@ -22,9 +23,9 @@ type symlink struct {
 }
 
 // NewSymlink creates a symbolic link node that may be added to an
-// InMemoryDirectory. It is an inmutable file; the target to which it
-// points can only be altered by replacing the node entirely (e.g., by
-// first unlinking it from the directory).
+// PrepopulatedDirectory. It is an inmutable file; the target to which
+// it points can only be altered by replacing the node entirely (e.g.,
+// by first unlinking it from the directory).
 func NewSymlink(target string) NativeLeaf {
 	// Simply let the inode number be based on the target. That way
 	// identical symlinks are deduplicated by the kernel.
@@ -53,6 +54,20 @@ func (f *symlink) UploadFile(ctx context.Context, contentAddressableStorage blob
 	return digest.BadDigest, status.Error(codes.InvalidArgument, "This file cannot be uploaded, as it is a symbolic link")
 }
 
+func (f *symlink) GetContainingDigests() digest.Set {
+	return digest.EmptySet
+}
+
+func (f *symlink) GetOutputServiceFileStatus(digestFunction *digest.Function) (*remoteoutputservice.FileStatus, error) {
+	return &remoteoutputservice.FileStatus{
+		FileType: &remoteoutputservice.FileStatus_Symlink_{
+			Symlink: &remoteoutputservice.FileStatus_Symlink{
+				Target: f.target,
+			},
+		},
+	}, nil
+}
+
 func (f *symlink) FUSEAccess(mask uint32) fuse.Status {
 	return fuse.OK
 }
@@ -73,10 +88,6 @@ func (f *symlink) FUSEGetDirEntry() fuse.DirEntry {
 		Mode: fuse.S_IFLNK,
 		Ino:  f.inodeNumber,
 	}
-}
-
-func (f *symlink) FUSEGetXAttr(attr string, dest []byte) (uint32, fuse.Status) {
-	return 0, fuse.ENOATTR
 }
 
 func (f *symlink) FUSEOpen(flags uint32) fuse.Status {

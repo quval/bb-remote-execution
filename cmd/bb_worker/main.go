@@ -29,6 +29,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
 	"github.com/buildbarn/bb-storage/pkg/global"
 	bb_grpc "github.com/buildbarn/bb-storage/pkg/grpc"
+	"github.com/buildbarn/bb-storage/pkg/random"
 	"github.com/buildbarn/bb-storage/pkg/util"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -98,24 +99,27 @@ func main() {
 		log.Fatal("Cannot start worker without any build directories")
 	}
 	for _, buildDirectoryConfiguration := range configuration.BuildDirectories {
-		var fuseBuildDirectory *re_fuse.InMemoryDirectory
+		var fuseBuildDirectory re_fuse.PrepopulatedDirectory
 		var naiveBuildDirectory filesystem.DirectoryCloser
 		var fileFetcher cas.FileFetcher
+		uploadBatchSize := blobstore.RecommendedFindMissingDigestsCount
 		switch backend := buildDirectoryConfiguration.Backend.(type) {
 		case *bb_worker.BuildDirectoryConfiguration_Fuse:
-			rootInodeNumberTree := re_fuse.NewRandomInodeNumberTree()
+			rootInodeNumber := random.FastThreadSafeGenerator.Uint64()
 			var serverCallbacks re_fuse.SimpleRawFileSystemServerCallbacks
-			fuseBuildDirectory = re_fuse.NewInMemoryDirectory(
+			fuseBuildDirectory = re_fuse.NewInMemoryPrepopulatedDirectory(
 				re_fuse.NewPoolBackedFileAllocator(
 					re_filesystem.EmptyFilePool,
-					util.DefaultErrorLogger),
+					util.DefaultErrorLogger,
+					random.FastThreadSafeGenerator),
 				util.DefaultErrorLogger,
-				rootInodeNumberTree,
+				rootInodeNumber,
+				random.FastThreadSafeGenerator,
 				serverCallbacks.EntryNotify)
 			if err := re_fuse.NewMountFromConfiguration(
 				backend.Fuse,
 				fuseBuildDirectory,
-				rootInodeNumberTree.Get(),
+				rootInodeNumber,
 				&serverCallbacks,
 				"bb_worker"); err != nil {
 				log.Fatal("Failed to mount build directory: ", err)
@@ -158,6 +162,12 @@ func main() {
 				int(nativeConfiguration.MaximumCacheFileCount),
 				nativeConfiguration.MaximumCacheSizeBytes,
 				eviction.NewMetricsSet(evictionSet, "HardlinkingFileFetcher"))
+
+			// Using a native file system requires us to
+			// hold on to file descriptors while uploading
+			// outputs. Limit the batch size to ensure that
+			// we don't exhaust file descriptors.
+			uploadBatchSize = 100
 		default:
 			log.Fatal("No build directory specified")
 		}
@@ -225,7 +235,7 @@ func main() {
 					contentAddressableStorageWriter, contentAddressableStorageFlusher := re_blobstore.NewBatchedStoreBlobAccess(
 						globalContentAddressableStorage,
 						digest.KeyWithoutInstance,
-						100)
+						uploadBatchSize)
 					contentAddressableStorageWriter = blobstore.NewMetricsBlobAccess(
 						contentAddressableStorageWriter,
 						clock.SystemClock,
@@ -239,7 +249,8 @@ func main() {
 						buildDirectory = builder.NewFUSEBuildDirectory(
 							fuseBuildDirectory,
 							directoryFetcher,
-							contentAddressableStorageWriter)
+							contentAddressableStorageWriter,
+							re_fuse.NewRandomInodeNumberTree())
 					} else {
 						buildDirectory = builder.NewNaiveBuildDirectory(
 							naiveBuildDirectory,

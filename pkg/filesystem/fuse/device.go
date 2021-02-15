@@ -6,6 +6,7 @@ import (
 	"context"
 	"syscall"
 
+	"github.com/buildbarn/bb-remote-execution/pkg/proto/remoteoutputservice"
 	"github.com/buildbarn/bb-storage/pkg/blobstore"
 	"github.com/buildbarn/bb-storage/pkg/digest"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
@@ -51,6 +52,14 @@ func (f *device) UploadFile(ctx context.Context, contentAddressableStorage blobs
 	return digest.BadDigest, status.Error(codes.InvalidArgument, "This file cannot be uploaded, as it is a device")
 }
 
+func (f *device) GetContainingDigests() digest.Set {
+	return digest.EmptySet
+}
+
+func (f *device) GetOutputServiceFileStatus(digestFunction *digest.Function) (*remoteoutputservice.FileStatus, error) {
+	return &remoteoutputservice.FileStatus{}, nil
+}
+
 func (f *device) FUSEAccess(mask uint32) fuse.Status {
 	if mask&^(fuse.R_OK|fuse.W_OK) != 0 {
 		return fuse.EACCES
@@ -74,10 +83,6 @@ func (f *device) FUSEGetDirEntry() fuse.DirEntry {
 		Mode: f.fileType,
 		Ino:  f.inodeNumber,
 	}
-}
-
-func (f *device) FUSEGetXAttr(attr string, dest []byte) (uint32, fuse.Status) {
-	return 0, fuse.ENOATTR
 }
 
 func (f *device) FUSEOpen(flags uint32) fuse.Status {

@@ -4,6 +4,7 @@ package fuse
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/buildbarn/bb-storage/pkg/filesystem/path"
@@ -40,7 +41,6 @@ type leafEntry struct {
 type node interface {
 	FUSEAccess(mask uint32) fuse.Status
 	FUSEGetAttr(out *fuse.Attr)
-	FUSEGetXAttr(attr string, dest []byte) (uint32, fuse.Status)
 	FUSESetAttr(in *fuse.SetAttrIn, out *fuse.Attr) fuse.Status
 }
 
@@ -60,7 +60,7 @@ type SimpleRawFileSystemServerCallbacks struct {
 // EntryNotify can be called to report that directory entries have been
 // removed. This causes them to be removed from the directory entry
 // cache used by FUSE as well.
-func (sc *SimpleRawFileSystemServerCallbacks) EntryNotify(parent uint64, name path.Component) fuse.Status {
+func (sc *SimpleRawFileSystemServerCallbacks) EntryNotify(parent uint64, name path.Component) {
 	sc.lock.RLock()
 	initializedServers := sc.initializedServers
 	sc.lock.RUnlock()
@@ -71,8 +71,8 @@ func (sc *SimpleRawFileSystemServerCallbacks) EntryNotify(parent uint64, name pa
 			// Even though we permit the root directory to
 			// have an arbitrary inode number, FUSE requires
 			// that the root directory uses node ID 1.
-			if s := initializedServer.server.EntryNotify(fuse.FUSE_ROOT_ID, name.String()); s != fuse.OK {
-				return s
+			if s := initializedServer.server.EntryNotify(fuse.FUSE_ROOT_ID, name.String()); s != fuse.OK && s != fuse.ENOENT {
+				log.Printf("Failed to invalidate %#v in root directory: %s", name.String(), s)
 			}
 		} else {
 			// Discard invalidations for directory entries
@@ -82,13 +82,12 @@ func (sc *SimpleRawFileSystemServerCallbacks) EntryNotify(parent uint64, name pa
 			_, ok := rfs.directories[parent]
 			rfs.nodeLock.RUnlock()
 			if ok {
-				if s := initializedServer.server.EntryNotify(parent, name.String()); s != fuse.OK {
-					return s
+				if s := initializedServer.server.EntryNotify(parent, name.String()); s != fuse.OK && s != fuse.ENOENT {
+					log.Printf("Failed to invalidate %#v in directory %d: %s", name.String(), parent, s)
 				}
 			}
 		}
 	}
-	return fuse.OK
 }
 
 type simpleRawFileSystem struct {
@@ -378,11 +377,7 @@ func (rfs *simpleRawFileSystem) Access(cancel <-chan struct{}, input *fuse.Acces
 }
 
 func (rfs *simpleRawFileSystem) GetXAttr(cancel <-chan struct{}, header *fuse.InHeader, attr string, dest []byte) (uint32, fuse.Status) {
-	rfs.nodeLock.RLock()
-	i := rfs.getNodeLocked(header.NodeId)
-	rfs.nodeLock.RUnlock()
-
-	return i.FUSEGetXAttr(attr, dest)
+	return 0, fuse.ENOATTR
 }
 
 func (rfs *simpleRawFileSystem) ListXAttr(cancel <-chan struct{}, header *fuse.InHeader, dest []byte) (uint32, fuse.Status) {
